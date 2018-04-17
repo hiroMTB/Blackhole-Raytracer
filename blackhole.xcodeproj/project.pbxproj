@@ -241,7 +241,7 @@
 		638164C61BF4EF78001906A3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/";
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/bin/";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -256,7 +256,7 @@
 		638164C71BF4EF78001906A3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/";
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/bin/";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/**";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
