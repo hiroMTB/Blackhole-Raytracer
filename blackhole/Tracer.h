@@ -2,7 +2,6 @@
 
 #include "glm/glm.hpp"
 #include "Types.h"
-#include "Scene.h"
 #include <FreeImagePlus.h>
 
 #include "string"

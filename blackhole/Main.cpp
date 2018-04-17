@@ -10,23 +10,32 @@ int main(int argc, char** argv)
     CTracer tracer;
     CScene scene;
     
-    int xRes = 1024;  // Default resolution
-    int yRes = 768;
+    int xRes = 1920;  // Default resolution
+    int yRes = 1080;
     
     Settings *settings;
+    Settings *defaultSettings;
     
     float xViewAngle = 2;
     float blackholeMass = 8.57e+36;
     float diskCoef = 8;
-    float cameraX = 11e+10;
-    float cameraY = 0;
+    float cameraX = 1e11*2.5;
+    float cameraY = 11e10;
     float cameraZ = 0;
+    
+    defaultSettings = new Settings(xRes,
+                            yRes,
+                            xViewAngle,
+                            cameraX,
+                            cameraY,
+                            cameraZ,
+                            blackholeMass,
+                            diskCoef);
     
     if(argc == 2) // There is input file in parameters
     {
         FILE* file = fopen(argv[1], "r");
-        if(file)
-        {
+        if(file){
             int xResFromFile = 0;
             int yResFromFile = 0;
             float xViewAngleFromFile = 0;
@@ -56,28 +65,23 @@ int main(int argc, char** argv)
                                     cameraZFromFile,
                                     blackholeMassFromFile,
                                     diskCoefFromFile);
-                
+                delete defaultSettings;
             }
             else {
-                settings = new Settings(xRes,
-                                        yRes,
-                                        xViewAngle,
-                                        cameraX,
-                                        cameraY,
-                                        cameraZ,
-                                        blackholeMass,
-                                        diskCoef);
+                settings = defaultSettings;
                 printf("Invalid config format! Using default parameters.\r\n");
             }
             
             fclose(file);
-        }
-        else
+        }else{
+            settings = defaultSettings;
             printf("Invalid config path! Using default parameters.\r\n");
+        }
     }
-    else
+    else{
+        settings = defaultSettings;
         printf("No config! Using default parameters.\r\n");
-    
+    }
     tracer.m_pScene = &scene;
     tracer.settings = settings;
     try {
@@ -92,4 +96,5 @@ int main(int argc, char** argv)
     }
     tracer.SaveImageToFile("Result.png");
     
+    delete settings;
 }

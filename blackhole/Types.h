@@ -2,9 +2,37 @@
 
 #include "glm/glm.hpp"
 #include "vector"
-#include "Constants.h"
 #include <OpenCL/opencl.h>
 #include <cmath>
+
+#define PHYSICS_G 6.67e-11
+#define PHYSICS_C 3e8
+
+class CScene
+{
+public:
+    CScene(){}
+};
+
+class Blackhole
+{
+public:
+    glm::dvec3 m_position;
+    double m_mass;
+    double m_radius;
+    double m_accreation_disk_coef;
+    Blackhole(glm::dvec3 position, double mass, double accreation_disk_coef) : m_position(position), m_mass(mass), m_accreation_disk_coef(accreation_disk_coef)
+    {
+        m_radius = 2 * mass * PHYSICS_G / pow(PHYSICS_C, 2);
+    }
+};
+
+
+class AccreationDisk
+{
+    double m_radius;
+    AccreationDisk(double radius) : m_radius(radius){};
+};
 
 struct SRay
 {
@@ -51,22 +79,27 @@ public:
              float _cameraY,
              float _cameraZ,
              float _blackholeMass,
-             
-             float _diskCoef) : xRes(_xRes),
-                                yRes(_yRes),
-                                xViewAngle(_xViewAngle),
-                                cameraX(_cameraX),
-                                cameraY(_cameraY),
-                                cameraZ(_cameraZ),
-                                blackholeMass(_blackholeMass),
-                                diskCoef(_diskCoef) {
-                                    blackholeRadius = 2 * blackholeMass * PHYSICS_G / pow(PHYSICS_C, 2);
-                                    cameraDistance = sqrt(pow(cameraX, 2) + pow(cameraY, 2) + pow(cameraZ, 2));
+             float _diskCoef)
+    : xRes(_xRes),
+    yRes(_yRes),
+    xViewAngle(_xViewAngle),
+    cameraX(_cameraX),
+    cameraY(_cameraY),
+    cameraZ(_cameraZ),
+    blackholeMass(_blackholeMass),
+    diskCoef(_diskCoef) {
+        blackholeRadius = 2 * blackholeMass * PHYSICS_G / pow(PHYSICS_C, 2);
+        cameraDistance = sqrt(pow(cameraX, 2) + pow(cameraY, 2) + pow(cameraZ, 2));
     }
 };
 
 
-
+typedef struct
+{
+    int start;
+    cl_float3 m_start;
+    cl_float3 m_dir;
+} CLRay;
 
 typedef struct
 {
