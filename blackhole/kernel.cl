@@ -62,11 +62,7 @@ CLRay MakeRay(int x, int y, float offset, __global CLCamera *gcamera)
 
 Result TraceRay(CLRay ray, __global  CLSettings *settings)
 {
-    float blackholeMass = settings->blackholeMass;
-    float blackholeRadius = settings->blackholeRadius;
     float diskCoef = settings->diskCoef;
-    
-    
     const float delta_t = 5;
     float3 position = ray.m_start;
     float cur_t = 0;
@@ -78,46 +74,70 @@ Result TraceRay(CLRay ray, __global  CLSettings *settings)
     float3 intersect2 = (float3)(0,0,0);
     float3 intersect3 = (float3)(0,0,0);
     
+    // hack
+    float blackholeMass[3];
+    blackholeMass[0] = settings->blackholeMass;
+    blackholeMass[1] = settings->blackholeMass * 1.2;
+    blackholeMass[2] = settings->blackholeMass * 4;
+
+    
+    float blackholeRadius[3];
+    blackholeRadius[0] = settings->blackholeRadius;
+    blackholeRadius[1] = settings->blackholeRadius * 1.2;
+    blackholeRadius[2] = settings->blackholeRadius * 4;
+
+    float3 blackholePos[3];
+    blackholePos[0] = float3( 0, 0, 0);
+    blackholePos[1] = float3( blackholeRadius[0]*2, 0, 0);
+    blackholePos[2] = float3(-blackholeRadius[0]*12, blackholeRadius[0]*2 , 0);
+
     Result result;
     while (1) {
-        float3 r = -position;
-        float coef = (float)PHYSICS_G * (float)blackholeMass / length(r);
-        coef /= length(r);
-        coef /= length(r);
-        //float3 acceleration = r * (float)PHYSICS_G * (float)BLACKHOLE_MASS / pow(length(r), 3);
-        float3 acceleration = r * coef;
-        
         float3 old_position = position;
-        position = position + velocity* delta_t + acceleration * (float)pow(delta_t, 2) / (float)2.0;
-        velocity = velocity + acceleration *delta_t;
-        cur_t += delta_t;
         
-        //sphere intersection
-        if (length(position) < blackholeRadius) {
+        for(int i=0; i<3; i++){
             
-            if (intersect1isset) {
-                result.type = 1;
-                result.intersect1 = intersect1;
-                result.intersect2 = position;
-                result.intersect3 = (float3)(0,0,0);
-                return result;
-            }
-            if (intersect2isset) {
-                result.type = 5;
-                result.intersect1 = intersect1;
-                result.intersect2 = intersect2;
-                result.intersect3 = position;
-                return result;
-            } else {
-                result.type = 2;
-                result.intersect1 = position;
-                result.intersect3 = (float3)(0,0,0);
-                result.intersect2 = (float3)(0,0,0);
-                return result;
-            }
+            float3 r = blackholePos[i] - position;
             
+            float coef = (float)PHYSICS_G * (float)blackholeMass[i] / length(r);
+            coef /= length(r);
+            coef /= length(r);
+            //float3 acceleration = r * (float)PHYSICS_G * (float)BLACKHOLE_MASS / pow(length(r), 3);
+            float3 acceleration = r * coef;
+            
+            position = position + velocity* delta_t + acceleration * (float)pow(delta_t, 2) / (float)2.0;
+            velocity = velocity + acceleration *delta_t;
         }
         
+        //sphere intersection
+        for(int i=0; i<3; i++){
+            if (length(blackholePos[i]-position)<blackholeRadius[i])
+            {
+                if (intersect1isset) {
+                    result.type = 1;
+                    result.intersect1 = intersect1;
+                    result.intersect2 = position;
+                    result.intersect3 = (float3)(0,0,0);
+                    return result;
+                }
+                if (intersect2isset) {
+                    result.type = 5;
+                    result.intersect1 = intersect1;
+                    result.intersect2 = intersect2;
+                    result.intersect3 = position;
+                    return result;
+                } else {
+                    result.type = 2;
+                    result.intersect1 = position;
+                    result.intersect3 = (float3)(0,0,0);
+                    result.intersect2 = (float3)(0,0,0);
+                    return result;
+                }
+            }
+        }
+        
+        cur_t += delta_t;
+
         //disk intersection
         float precision = 1000;
         float3 B = position;
@@ -128,31 +148,31 @@ Result TraceRay(CLRay ray, __global  CLSettings *settings)
         
         
         
-        float t = - A.x / m.x;
-        if ((t >= 0) && (t <=1)) {
-            float3 cur_point = A + m * t;
-            if (fabs(cur_point).x < precision) {
-                if (length(cur_point) < blackholeRadius * diskCoef) {
-                    
-                    if ((intersect1isset) && (!intersect2isset)) {
-                        intersect2isset = 1;
-                        intersect2 = cur_point;
-                    } else if (!intersect1isset) {
-                        intersect1isset = 1;
-                        intersect1 = cur_point;
-                    } else if (intersect1isset && intersect2isset) {
-                        result.intersect1 = intersect1;
-                        result.intersect2 = intersect2;
-                        result.intersect3 = cur_point;
-                        result.type = 6;
-                        return result;
-                    }
-                    
-                    
-
-                }
-            }
-        }
+//        float t = - A.x / m.x;
+//        if ((t >= 0) && (t <=1)) {
+//            float3 cur_point = A + m * t;
+//            if (fabs(cur_point).x < precision) {
+//                if (length(cur_point) < blackholeRadius * diskCoef) {
+//
+//                    if ((intersect1isset) && (!intersect2isset)) {
+//                        intersect2isset = 1;
+//                        intersect2 = cur_point;
+//                    } else if (!intersect1isset) {
+//                        intersect1isset = 1;
+//                        intersect1 = cur_point;
+//                    } else if (intersect1isset && intersect2isset) {
+//                        result.intersect1 = intersect1;
+//                        result.intersect2 = intersect2;
+//                        result.intersect3 = cur_point;
+//                        result.type = 6;
+//                        return result;
+//                    }
+//
+//
+//
+//                }
+//            }
+//        }
         
         
         

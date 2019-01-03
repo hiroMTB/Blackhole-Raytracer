@@ -5,6 +5,8 @@
 #include <FreeImage.h>
 #include "Types.h"
 
+using namespace std;
+
 int main(int argc, char** argv)
 {
     CTracer tracer;
@@ -19,8 +21,8 @@ int main(int argc, char** argv)
     float xViewAngle = 2;
     float blackholeMass = 8.57e+36;
     float diskCoef = 8;
-    float cameraX = 1e11*2.5;
-    float cameraY = 11e10;
+    float cameraX = 1e11*0.2;  // 1e11*2.5;
+    float cameraY = 1;  // 11e10;
     float cameraZ = 0;
     
     defaultSettings = new Settings(xRes,
@@ -84,17 +86,34 @@ int main(int argc, char** argv)
     }
     tracer.m_pScene = &scene;
     tracer.settings = settings;
-    try {
-        tracer.RenderImage();
+    tracer.setup();
+    
+    for(int i=0; i<1000; i++)
+    {
+        
+        try {
+            tracer.RenderImage();
+            
+        } catch (char const *a) {
+            std::cout << "Error: " << a << std::endl;
+            return -1;
+        } catch (int a) {
+            std::cout << "Error # " << a << std::endl;
+            return -1;
+        }
+        char m[255];
+        sprintf(m, "./render/%04d.png", i);
+        tracer.SaveImageToFile(m);
+        
+        cout << m << endl;
+        
+        double adder = 2e11 / 1000.0;
+        tracer.settings->cameraX += adder*0.5;
+        tracer.settings->cameraY += adder;
+        //tracer.settings->cameraZ *= 1.02;
+        //tracer.settings->xViewAngle += 0.0001;
 
-    } catch (char const *a) {
-        std::cout << "Error: " << a << std::endl;
-        return -1;
-    } catch (int a) {
-        std::cout << "Error # " << a << std::endl;
-        return -1;
     }
-    tracer.SaveImageToFile("Result.png");
     
     delete settings;
 }

@@ -2,13 +2,122 @@
 #include "FreeImagePlus.h"
 #include "glm/gtx/intersect.hpp"
 #include <iostream>
-#include "cl.hpp"
-#include <OpenCL/opencl.h>
 #include <fstream>
 #include <sstream>
 #include <float.h>
+#include "cl.hpp"
+#include <OpenCL/opencl.h>
 
 using namespace glm;
+using namespace std;
+
+CLCamera *CLCameraFromSCamera(SCamera m_camera){
+    CLCamera *camera = new CLCamera;
+    camera->m_pos.x = m_camera.m_pos.x;
+    camera->m_pos.y = m_camera.m_pos.y;
+    camera->m_pos.z = m_camera.m_pos.z;
+    camera->m_forward.x = m_camera.m_forward.x;
+    camera->m_forward.y = m_camera.m_forward.y;
+    camera->m_forward.z = m_camera.m_forward.z;
+    camera->m_up.x = m_camera.m_up.x;
+    camera->m_up.y = m_camera.m_up.y;
+    camera->m_up.z = m_camera.m_up.z;
+    camera->m_right.x = m_camera.m_right.x;
+    camera->m_right.y = m_camera.m_right.y;
+    camera->m_right.z = m_camera.m_right.z;
+    camera->m_resolution.x = m_camera.m_resolution.x;
+    camera->m_resolution.y = m_camera.m_resolution.y;
+    
+    return camera;
+}
+
+CLSettings *CLSettingsFromSettings(Settings &settings){
+    CLSettings *clSettings = new CLSettings;
+    clSettings->cameraDistance = settings.cameraDistance;
+    clSettings->blackholeRadius = settings.blackholeRadius;
+    clSettings->blackholeMass = settings.blackholeMass;
+    clSettings->diskCoef = settings.diskCoef;
+    
+    return clSettings;
+}
+
+
+void CTracer::setup(){
+    
+    // load image
+    stars = LoadImageFromFile("data/starmap_16k_retouched_02.tif");
+    disk = LoadImageFromFile("data/disk_32.png");
+
+    if(!stars){
+        cout << "Can not load star image" << endl;
+        exit(1);
+    }
+        
+    // prepare OpenCL
+    int xRes = settings->xRes;
+    int yRes = settings->yRes;
+    int DATA_SIZE = xRes * yRes;
+    
+    std::vector<cl::Platform> platforms;
+    cl::Platform::get(&platforms);
+    
+    std::vector<cl::Device> devices;
+    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    
+    
+    //select device here!
+    cl::Device device = devices[1];
+    std::cout << device.getInfo<CL_DEVICE_NAME>() << std::endl;
+    
+    
+    std::vector<cl::Device> contextDevices;
+    contextDevices.push_back(device);
+    context = cl::Context(contextDevices);
+    queue = cl::CommandQueue(context, device);
+    
+    //Create memory buffers
+    pInputVector1 = (int *)malloc(DATA_SIZE * sizeof(int));
+    pInputVector2 = (int*)malloc(DATA_SIZE*sizeof(int));
+    pOutputVector = (Result *)malloc(DATA_SIZE * sizeof(Result));
+    
+    
+    for (int i = 0; i < yRes; i++) {
+        for (int j = 0; j < xRes; j++) {
+            pInputVector1[i*xRes + j] = i;
+            pInputVector2[i*xRes + j] = j;
+        }
+    }
+    
+    cl_int error;
+    clmInputVector1 = cl::Buffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(int), pInputVector1, &error);
+    if (error) {
+        throw error;
+    }
+    clmInputVector2 = cl::Buffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(int), pInputVector2, &error);
+    if (error) {
+        throw error;
+    }
+    clmOutputVector = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(Result), pOutputVector, &error);
+    if (error) {
+        throw error;
+    }
+    
+    
+    std::ifstream t("kernel.cl");
+    std::stringstream buffer;
+    buffer <<  t.rdbuf();
+    
+    std::string sourceCode = buffer.str();
+    //sourceCode = "#define BLACKHOLE_RADIUS " + m_pScene->blackhole.m_radius
+    cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()+1));
+    cl::Program program = cl::Program(context, source);
+    
+    int buildRes = program.build(contextDevices);
+    if (buildRes != CL_SUCCESS){
+        throw "build error";
+    }
+    kernel = cl::Kernel(program, "TestKernel");
+}
 
 std::tuple<vec3, float> CTracer::GetDiskColorByPosition(vec3 position){
     dvec2 disk_0 = dvec2(- settings->blackholeRadius * settings->diskCoef, -settings->blackholeRadius * settings->diskCoef);
@@ -40,35 +149,6 @@ vec3 CTracer::GetBackgroundColorByVector(vec3 velocity){
     return vec3(rgbquadcolor.rgbRed/255.0, rgbquadcolor.rgbGreen/255.0, rgbquadcolor.rgbBlue/255.0);
 }
 
-CLCamera *CLCameraFromSCamera(SCamera m_camera){
-    CLCamera *camera = new CLCamera;
-    camera->m_pos.x = m_camera.m_pos.x;
-    camera->m_pos.y = m_camera.m_pos.y;
-    camera->m_pos.z = m_camera.m_pos.z;
-    camera->m_forward.x = m_camera.m_forward.x;
-    camera->m_forward.y = m_camera.m_forward.y;
-    camera->m_forward.z = m_camera.m_forward.z;
-    camera->m_up.x = m_camera.m_up.x;
-    camera->m_up.y = m_camera.m_up.y;
-    camera->m_up.z = m_camera.m_up.z;
-    camera->m_right.x = m_camera.m_right.x;
-    camera->m_right.y = m_camera.m_right.y;
-    camera->m_right.z = m_camera.m_right.z;
-    camera->m_resolution.x = m_camera.m_resolution.x;
-    camera->m_resolution.y = m_camera.m_resolution.y;
-    
-    return camera;
-}
-
-CLSettings *CLSettingsFromSettings(Settings &settings){
-    CLSettings *clSettings = new CLSettings;
-    clSettings->cameraDistance = settings.cameraDistance;
-    clSettings->blackholeRadius = settings.blackholeRadius;
-    clSettings->blackholeMass = settings.blackholeMass;
-    clSettings->diskCoef = settings.diskCoef;
-
-    return clSettings;
-}
 
 void CTracer::setCamera(void){
     m_camera.m_viewAngle = vec2(settings->xViewAngle, settings->xViewAngle * settings->yRes / settings->xRes);
@@ -76,7 +156,7 @@ void CTracer::setCamera(void){
     m_camera.m_resolution = uvec2(settings->xRes, settings->yRes);
     m_camera.m_pixels.resize(settings->xRes * settings->yRes);
     
-    m_camera.m_forward = normalize(- m_camera.m_pos);
+    m_camera.m_forward = normalize(-m_camera.m_pos);
     m_camera.m_up = glm::dvec3(m_camera.m_forward.y, -m_camera.m_forward.x, m_camera.m_forward.z);
     if (m_camera.m_up.x < 0)
         m_camera.m_up *= -1;
@@ -89,68 +169,91 @@ void CTracer::setCamera(void){
 
 vec3 CTracer::GetColorByResult(Result result){
     vec3 color;
+
+    bool bDisk = false;
     
     if (result.type == 1) {
         // disk, blackhole
-        
+        if(bDisk){
         vec3 pos = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
         std::tuple<vec3, float> diskcolor = GetDiskColorByPosition(pos);
         float alpha = std::get<1>(diskcolor);
         color = alpha * std::get<0>(diskcolor) + (1 - alpha) * vec3(0);
+        }else{
+            color = vec3(0,0,0);
+        }
+
     }else if (result.type == 2) {
         // blackhole
         
         color = vec3(0,0,0);
     } else if (result.type == 3) {
         // disk, background
-        
+        if(bDisk){
         vec3 pos = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
         std::tuple<vec3, float> diskcolor = GetDiskColorByPosition(pos);
         vec3 velocity = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
         vec3 backcolor = GetBackgroundColorByVector(velocity);
         float alpha = std::get<1>(diskcolor);
         color = alpha * std::get<0>(diskcolor) + (1 - alpha) * backcolor;
+        }else{
+            vec3 velocity = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
+            vec3 backcolor = GetBackgroundColorByVector(velocity);
+            color = backcolor;
+        }
+
     } else if (result.type ==4) {
         // background
         color = GetBackgroundColorByVector(vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z));
     } else if (result.type == 5) {
         
         // disk, disk, blackhole
-        
-        vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
-        std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
-        vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
-        std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
-        
-        float alpha1 = std::get<1>(diskcolor1);
-        float alpha2 = std::get<1>(diskcolor2);
-        color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * vec3(0);
-        
+        if(bDisk){
+            vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
+            std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
+            vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
+            std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
+            float alpha1 = std::get<1>(diskcolor1);
+            float alpha2 = std::get<1>(diskcolor2);
+            color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * vec3(0);
+        }else{
+            color = vec3(0,0,0);
+        }
     } else if (result.type == 6) {
-        vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
-        std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
-        vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
-        std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
-        vec3 pos3 = vec3(result.intersect3.x, result.intersect3.y, result.intersect3.z);
-        std::tuple<vec3, float> diskcolor3 = GetDiskColorByPosition(pos3);
-        
-        float alpha1 = std::get<1>(diskcolor1);
-        float alpha2 = std::get<1>(diskcolor2);
-        //float alpha3 = std::get<1>(diskcolor3);
-        color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * std::get<0>(diskcolor3);
+        if(bDisk){
+            vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
+            std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
+            vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
+            std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
+            vec3 pos3 = vec3(result.intersect3.x, result.intersect3.y, result.intersect3.z);
+            std::tuple<vec3, float> diskcolor3 = GetDiskColorByPosition(pos3);
+            
+            float alpha1 = std::get<1>(diskcolor1);
+            float alpha2 = std::get<1>(diskcolor2);
+            //float alpha3 = std::get<1>(diskcolor3);
+            color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * std::get<0>(diskcolor3);
+   
+        }else{
+            color = vec3(0,0,0);
+        }
         // disk, disk, disk
     } else if (result.type == 7) {
         // disk, disk, background
-        
-        vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
-        std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
-        vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
-        std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
-        vec3 velocity = vec3(result.intersect3.x, result.intersect3.y, result.intersect3.z);
-        vec3 backcolor = GetBackgroundColorByVector(velocity);
-        float alpha1 = std::get<1>(diskcolor1);
-        float alpha2 = std::get<1>(diskcolor2);
-        color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * backcolor;
+        if(bDisk){
+            vec3 pos1 = vec3(result.intersect1.x, result.intersect1.y, result.intersect1.z);
+            std::tuple<vec3, float> diskcolor1 = GetDiskColorByPosition(pos1);
+            vec3 pos2 = vec3(result.intersect2.x, result.intersect2.y, result.intersect2.z);
+            std::tuple<vec3, float> diskcolor2 = GetDiskColorByPosition(pos2);
+            vec3 velocity = vec3(result.intersect3.x, result.intersect3.y, result.intersect3.z);
+            vec3 backcolor = GetBackgroundColorByVector(velocity);
+            float alpha1 = std::get<1>(diskcolor1);
+            float alpha2 = std::get<1>(diskcolor2);
+            color = alpha1 * std::get<0>(diskcolor1) + alpha2 * std::get<0>(diskcolor2) + (1 - alpha1 - alpha2) * backcolor;
+        }else{
+            vec3 velocity = vec3(result.intersect3.x, result.intersect3.y, result.intersect3.z);
+            vec3 backcolor = GetBackgroundColorByVector(velocity);
+            color = backcolor;
+        }
     }
     else {
         throw "Error getting result";
@@ -163,78 +266,17 @@ void CTracer::RenderImage(){
 
     int xRes = settings->xRes;
     int yRes = settings->yRes;
-    stars = LoadImageFromFile("data/stars.jpg");
-    disk = LoadImageFromFile("data/disk_32.png");
-    
+    int DATA_SIZE = xRes * yRes;
     setCamera();
     
-    int DATA_SIZE = xRes * yRes;
-    
-    std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);
-    
-    std::vector<cl::Device> devices;
-    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);
-    
-    
-    //select device here!
-    cl::Device device = devices[1];
-    std::cout << device.getInfo<CL_DEVICE_NAME>() << std::endl;
-    
-    
-    std::vector<cl::Device> contextDevices;
-    contextDevices.push_back(device);
-    cl::Context context(contextDevices);
-    cl::CommandQueue queue(context, device);
-    
-    //Create memory buffers
-    int *pInputVector1 = (int *)malloc(DATA_SIZE * sizeof(int));
-    int *pInputVector2 = (int*)malloc(DATA_SIZE*sizeof(int));
-    Result *pOutputVector = (Result *)malloc(DATA_SIZE * sizeof(Result));
-
-    
-    for (int i = 0; i < yRes; i++) {
-        for (int j = 0; j < xRes; j++) {
-            pInputVector1[i*xRes + j] = i;
-            pInputVector2[i*xRes + j] = j;
-        }
-    }
-    
-    cl_int error;
-    cl::Buffer clmInputVector1 = cl::Buffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(int), pInputVector1, &error);
-    if (error) {
-        throw error;
-    }
-    cl::Buffer clmInputVector2 = cl::Buffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(int), pInputVector2, &error);
-    if (error) {
-        throw error;
-    }
-    cl::Buffer clmOutputVector = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, DATA_SIZE * sizeof(Result), pOutputVector, &error);
-    if (error) {
-        throw error;
-    }
-    
-    CLCamera *clCamera = CLCameraFromSCamera(m_camera);
-    cl::Buffer clmCamera = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(*clCamera), clCamera);
-    CLSettings *clSettings = CLSettingsFromSettings(*settings);
-    cl::Buffer clmSettings = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(*clSettings), clSettings);
-    
-    std::ifstream t("kernel.cl");
-    std::stringstream buffer;
-    buffer <<  t.rdbuf();
-    
-    std::string sourceCode = buffer.str();
-    //sourceCode = "#define BLACKHOLE_RADIUS " + m_pScene->blackhole.m_radius
-    cl::Program::Sources source(1, std::make_pair(sourceCode.c_str(), sourceCode.length()+1));
-    cl::Program program = cl::Program(context, source);
-    
-    int buildRes = program.build(contextDevices);
-    if (buildRes != CL_SUCCESS){
-        throw "build error";
-    }
-    cl::Kernel kernel(program, "TestKernel");
-    
     int iArg = 0;
+    cl_int error;
+    
+    clCamera = CLCameraFromSCamera(m_camera);
+    clmCamera = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(*clCamera), clCamera);
+    clSettings = CLSettingsFromSettings(*settings);
+    clmSettings = cl::Buffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(*clSettings), clSettings);
+
     
     kernel.setArg(iArg++, clmInputVector1);
     kernel.setArg(iArg++, clmInputVector2);
@@ -321,4 +363,18 @@ fipImage* CTracer::LoadImageFromFile(std::string fileName){
     fipImage *image = new fipImage;
     image->load(fileName.c_str());
     return image;
+}
+
+
+CTracer::~CTracer(){
+    if(stars) stars->clear();
+    if(disk) disk->clear();
+    
+    if(pInputVector1) delete pInputVector1;
+    if(pInputVector2) delete pInputVector2;
+    if(clSettings) delete clSettings;
+    if(pOutputVector) delete pOutputVector;
+    if(clCamera) delete clCamera;
+    //if(settings) delete settings;
+    
 }
